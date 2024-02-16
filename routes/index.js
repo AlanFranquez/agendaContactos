@@ -1,79 +1,117 @@
+// Importar las dependencias necesarias
 var express = require('express');
 const pool = require('../src/db');
+const bcrypt = require('bcrypt');
+
 var router = express.Router();
 
-// Traer usuarios
-router.get('/', function(req, res, next) {
-  pool.query('SELECT * FROM contacto', (err, results) => {
-    if(err) throw err;
-
-    res.status(201).send(results.rows);
-  })
+// Ruta para obtener todos los usuarios
+router.get('/', async (req, res) => {
+  if(!req.session.loggedin) {
+    return res.redirect('/login');
+  }
+  try {
+    const usuarios = await pool.query('SELECT * FROM agendados WHERE idusuarios=$1', [req.session.userId]);
+    res.render('index', { usuarios: usuarios.rows, u: req.session.username});
+  } catch (error) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).send('Error interno del servidor');
+  }
 });
 
 
-// Agregar usuario
+router.post('/', async(req, res) => {
+  try {
+    
+    const userId = req.session.userId;
+    const {nombre, direccion, telefono} = req.body;
 
-router.post('/', (req, res, next) => {
-  const {nombre, telefono, correo} = req.body;
+    await pool.query('INSERT INTO agendados(nombre, direccion, telefono, idusuarios) VALUES($1, $2, $3, $4)', [nombre, direccion, telefono, userId]);
 
-  pool.query('SELECT * FROM contacto WHERE nombre=$1', [nombre], (err, results) => {
-    if(err) throw err;
 
-    if(results.rows.length) {
-      res.status(500).send('Ya existe este usuario');
+    res.redirect('/');
+
+  } catch (error) {
+    console.log(error);
+    res.status(400).send('No se pudo completar la accion');
+  }
+
+});
+
+
+// Eliminar 
+
+
+
+// Ruta para el registro de usuarios
+router.get('/register', (req, res) => {
+  res.render('register', { title: 'Registro' });
+});
+
+router.post('/register', async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if(req.session.log) {
+    res.redirect('/');
+  }
+
+  try {
+    const comprobarUsuario = await pool.query('SELECT * FROM usuarios WHERE email=$1', [email]);
+    if (comprobarUsuario.rows.length > 0) {
+      return res.status(400).send('Este correo electrónico ya está en uso');
+    }
+
+    const hashpassword = await bcrypt.hash(password, 10);
+    await pool.query('INSERT INTO usuarios(username, email, password) VALUES ($1, $2, $3)', [username, email, hashpassword]);
+
+    res.status(201).send('USUARIO REGISTRADO CORRECTAMENTE');
+  } catch (error) {
+    console.error('Error al registrar usuario:', error);
+    res.status(500).send('Error interno del servidor');
+  }
+});
+
+// Ruta para el inicio de sesión
+router.get('/login', (req, res) => {
+  res.render('login', { title: 'Inicio de Sesión' });
+});
+
+router.post('/login', async (req, res) => {
+  const { username, password, id } = req.body;
+
+  try {
+    const consulta = await pool.query('SELECT * FROM usuarios WHERE username=$1', [username]);
+    if (consulta.rows.length === 0) {
+      return res.status(400).send('Credenciales inválidas');
+    }
+
+    const userId = consulta.rows[0].id;
+
+    const compPassword = await bcrypt.compare(password, consulta.rows[0].password);
+    if (!compPassword) {
+      return res.status(400).send('Contraseña incorrecta. Por favor, vuelve a intentarlo');
+    }
+
+    req.session.loggedin = true;
+    req.session.userId = userId;
+    req.session.username = username;
+    res.redirect('/');
+  } catch (error) {
+    console.error('Error al iniciar sesión:', error);
+    res.status(500).send('Error interno del servidor');
+  }
+});
+
+router.get('/logout', (req, res) => {
+  req.session.loggedin = false;
+
+  req.session.destroy((err) => {
+    if(err) {
+      return res.status(400).send('Hubo un error, no se pudo desloguear');
     } else {
-      pool.query('INSERT INTO contacto(nombre, telefono, correo) VALUES($1,$2,$3)', [nombre, telefono, correo], (err, results) => {
-        if(err) throw err;
-
-
-        res.status(201).send(results.rows);
-      })
+      res.redirect('/login');
     }
   })
-});
-
-
-// Eliminar usuarios
-router.delete('/:id', (req, res, next) => {
-  const id = parseInt(req.params.id);
-
-  pool.query('SELECT * FROM contacto WHERE id=$1', [id], (err, results) => {
-    if(err) throw err;
-
-    if(!results.rows.length) {
-      res.status(404).send('Este usuario no se encuentra');
-    } else {
-      pool.query('DELETE FROM contacto WHERE id=$1', [id], (err, results) => {
-        if(err) throw err;
-
-        res.status(201).send('Usuario eliminado correctamente');
-      })
-    }
-  })
-});
-
-// Editar usuarios
-router.put('/:id', (req, res, next) => {
-  const {id, nombre, telefono, correo} = req.body;
-
-  pool.query('SELECT * FROM contacto WHERE id=$1', [id], (err, results) => {
-    if(err) throw err;
-
-    if(!results.rows.length) {
-      res.status(404).send('El usuario no se encuentra');
-    } else {
-      // Agrega la consulta para actualizar los datos del usuario en la base de datos
-      pool.query('UPDATE contacto SET nombre=$1, telefono=$2, correo=$3 WHERE id=$4', [nombre, telefono, correo, id], (err, results) => {
-        if(err) throw err;
-
-        res.status(201).send('Usuario actualizado correctamente');
-      });
-    }
-  });
-});
-
-
+})
 
 module.exports = router;
- 
