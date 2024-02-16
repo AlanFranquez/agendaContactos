@@ -1,0 +1,24 @@
+doctype html
+html(lang="en")
+  head
+    meta(charset="UTF-8")
+    meta(name="viewport", content="width=device-width, initial-scale=1.0")
+    title Lista de Usuarios
+  body
+    h1= title
+
+    form(action="/login", method="post")
+        div 
+            label(for="username") username
+            input(type="text" name="username" id="username")
+
+        div 
+            label(for="password") password
+            input(type="password" name="password" id="password")
+
+        div 
+            button(type="submit") Acceder
+
+    
+    div 
+        a(href="/register") Ir a Registro
